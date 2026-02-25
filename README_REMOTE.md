@@ -31,7 +31,7 @@ huggingface-cli login
 
 LLaMA-Factory can stream the dataset directly from Hugging Face! You just need to tell it where to look.
 
-Open `LLaMA-Factory/data/dataset_info.json` on your remote server, and add this block inside the main JSON object:
+Open `LLaMA-Factory/data/dataset_info.json` on your remote server, and add this block inside the main JSON oibject:
 
 ```json
   "vlm_counting": {
@@ -73,6 +73,8 @@ llamafactory-cli train \
     --warmup_steps 20 \
     --save_steps 500 \
     --eval_steps 500 \
+    --evaluation_strategy steps \
+    --load_best_model_at_end \
     --learning_rate 2e-4 \
     --num_train_epochs 3.0 \
     --plot_loss \
