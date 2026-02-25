@@ -74,6 +74,7 @@ llamafactory-cli train \
     --save_steps 500 \
     --eval_steps 500 \
     --evaluation_strategy steps \
+    --val_size 0.05 \
     --load_best_model_at_end \
     --learning_rate 2e-4 \
     --num_train_epochs 3.0 \
