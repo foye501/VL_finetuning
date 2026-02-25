@@ -73,7 +73,7 @@ llamafactory-cli train \
     --warmup_steps 20 \
     --save_steps 500 \
     --eval_steps 500 \
-    --evaluation_strategy steps \
+    --eval_strategy steps \
     --val_size 0.05 \
     --load_best_model_at_end \
     --learning_rate 2e-4 \
