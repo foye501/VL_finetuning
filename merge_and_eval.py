@@ -56,6 +56,12 @@ def extract_ground_truth(assistant_message):
     match = re.search(r'Total count:\s*(\d+)', assistant_message, re.IGNORECASE)
     return int(match.group(1)) if match else -1
 
+def get_difficulty(count):
+    if count <= 5: return "Easy"
+    if count <= 20: return "Medium"
+    if count <= 50: return "Hard"
+    return "Extreme"
+
 def run_evaluation(model_path, dataset_subset, name="Model"):
     print(f"\nLoading {name} for Inference...")
     model = Qwen2VLForConditionalGeneration.from_pretrained(
@@ -68,6 +74,13 @@ def run_evaluation(model_path, dataset_subset, name="Model"):
     total_error = 0
     valid_samples = 0
     
+    tier_stats = {
+        "Easy": {"correct": 0, "error": 0, "total": 0},
+        "Medium": {"correct": 0, "error": 0, "total": 0},
+        "Hard": {"correct": 0, "error": 0, "total": 0},
+        "Extreme": {"correct": 0, "error": 0, "total": 0}
+    }
+    
     print(f"\n--- Starting {name} Evaluation ({len(dataset_subset)} images) ---")
     for i, item in enumerate(tqdm(dataset_subset)):
         image = item["image"].convert("RGB")
@@ -79,6 +92,8 @@ def run_evaluation(model_path, dataset_subset, name="Model"):
         
         if gt_count == -1:
             continue # Skip invalid training data
+            
+        tier = get_difficulty(gt_count)
             
         # Format for processor
         chat = [
@@ -107,14 +122,31 @@ def run_evaluation(model_path, dataset_subset, name="Model"):
         
         if pred_count != -1:
             valid_samples += 1
+            error = abs(pred_count - gt_count)
+            
+            total_error += error
+            tier_stats[tier]["total"] += 1
+            tier_stats[tier]["error"] += error
+            
             if pred_count == gt_count:
                 correct += 1
-            total_error += abs(pred_count - gt_count)
+                tier_stats[tier]["correct"] += 1
             
-    print(f"\n--- {name} Results ---")
+    print(f"\n{'='*40}")
+    print(f"--- {name} Results ---")
+    print(f"{'='*40}")
     if valid_samples > 0:
-        print(f"Accuracy: {(correct/valid_samples)*100:.1f}% ({correct}/{valid_samples})")
-        print(f"Mean Absolute Error (MAE): {total_error/valid_samples:.2f}")
+        print(f"Overall Accuracy: {(correct/valid_samples)*100:.1f}% ({correct}/{valid_samples})")
+        print(f"Overall Mean Absolute Error (MAE): {total_error/valid_samples:.2f}")
+        
+        print("\nBreakdown by Difficulty Tier:")
+        for tier_name, stats in tier_stats.items():
+            if stats["total"] > 0:
+                tier_acc = (stats["correct"] / stats["total"]) * 100
+                tier_mae = stats["error"] / stats["total"]
+                print(f"  {tier_name} (n={stats['total']}):")
+                print(f"    Accuracy: {tier_acc:.1f}% ({stats['correct']}/{stats['total']})")
+                print(f"    MAE:      {tier_mae:.2f}")
     else:
         print("No valid samples evaluated.")
         
