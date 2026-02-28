@@ -125,7 +125,7 @@ def process_high_res_image(image, prompt_text, model, processor, grid_dim=2):
 
             # Inference
             with torch.no_grad():
-                generated_ids = model.generate(**inputs, max_new_tokens=1024)
+                generated_ids = model.generate(**inputs, max_new_tokens=2048)
                 
             generated_ids_trimmed = [
                 out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
@@ -252,7 +252,7 @@ def main():
         inputs = processor(text=[text], images=[image], padding=True, return_tensors="pt").to(model.device)
 
         with torch.no_grad():
-            gen_ids = model.generate(**inputs, max_new_tokens=1024)
+            gen_ids = model.generate(**inputs, max_new_tokens=2048)
             
         gen_ids_trimmed = [out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, gen_ids)]
         single_pass_boxes = extract_boxes(processor.batch_decode(gen_ids_trimmed, skip_special_tokens=True)[0])
