@@ -6,6 +6,7 @@ import ast
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+from PIL import Image
 from datasets import load_dataset
 from tqdm import tqdm
 from transformers import AutoProcessor, Qwen2VLForConditionalGeneration
@@ -103,6 +104,11 @@ def process_high_res_image(image, prompt_text, model, processor, grid_dim=2):
             
             # Crop the tile
             tile_img = image.crop((left, upper, right, lower))
+            
+            # CRITICAL FIX: Qwen-VL uses adaptive token scaling based on input dimension.
+            # If we just pass a smaller crop, it allocates fewer vision tokens, defeating the purpose!
+            # We must upsample the crop back to the original dimensions to force maximum token allocation.
+            tile_img = tile_img.resize((width, height), Image.Resampling.LANCZOS)
             
             # Prepare VLM Input
             chat = [
