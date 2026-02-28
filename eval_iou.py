@@ -4,6 +4,8 @@ import json
 import torch
 import ast
 import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 from datasets import load_dataset
 from tqdm import tqdm
 from transformers import AutoProcessor, Qwen2VLForConditionalGeneration
@@ -62,7 +64,6 @@ def evaluate_boxes(pred_boxes, gt_boxes, iou_threshold=0.5):
     matched_gt = set()
     true_positives = 0
 
-    # For each predicted box, find the best matching ground truth box
     for p_box in pred_boxes:
         best_iou = 0
         best_gt_idx = -1
@@ -89,6 +90,41 @@ def evaluate_boxes(pred_boxes, gt_boxes, iou_threshold=0.5):
         f1 = 0.0
         
     return precision, recall, f1
+
+def save_annotated_image(image, gt_boxes, pred_boxes, output_path, iou_f1):
+    """Draws GT (green) and Pred (red) boxes on the image and saves it."""
+    # Convert PIL Image to physical dimensions for Matplotlib
+    fig, ax = plt.subplots(1, figsize=(10, 10))
+    ax.imshow(image)
+    
+    # Width and height of the image to denormalize 0-1000 coordinates
+    width, height = image.size
+    
+    # Helper to convert [ymin, xmin, ymax, xmax] from 0-1000 scale to pixel coordinates
+    def convert_box(box):
+        y1, x1, y2, x2 = box
+        px1 = (x1 / 1000.0) * width
+        py1 = (y1 / 1000.0) * height
+        px2 = (x2 / 1000.0) * width
+        py2 = (y2 / 1000.0) * height
+        return px1, py1, px2 - px1, py2 - py1
+
+    # Draw Ground Truth boxes (Green)
+    for box in gt_boxes:
+        x, y, w, h = convert_box(box)
+        rect = patches.Rectangle((x, y), w, h, linewidth=2, edgecolor='g', facecolor='none', linestyle='dashed')
+        ax.add_patch(rect)
+
+    # Draw Predicted boxes (Red)
+    for box in pred_boxes:
+        x, y, w, h = convert_box(box)
+        rect = patches.Rectangle((x, y), w, h, linewidth=2, edgecolor='r', facecolor='none')
+        ax.add_patch(rect)
+
+    plt.title(f"Ground Truth (Green): {len(gt_boxes)} | Predicted (Red): {len(pred_boxes)} | F1: {iou_f1:.2f}")
+    plt.axis('off')
+    plt.savefig(output_path, bbox_inches='tight', dpi=150)
+    plt.close(fig)
 
 def get_difficulty(count):
     if count <= 5: return "Easy"
@@ -118,6 +154,10 @@ def main():
         "Hard": {"p_sum": 0, "r_sum": 0, "f1_sum": 0, "count": 0},
         "Extreme": {"p_sum": 0, "r_sum": 0, "f1_sum": 0, "count": 0}
     }
+    
+    vis_dir = "eval_visualizations"
+    os.makedirs(vis_dir, exist_ok=True)
+    saved_visualizations = 0
 
     print(f"\n--- Starting Bounding Box Evaluation ({len(dataset)} images) ---")
     for item in tqdm(dataset):
@@ -157,6 +197,12 @@ def main():
         pred_boxes = extract_boxes(output_text)
         
         p, r, f1 = evaluate_boxes(pred_boxes, gt_boxes, IOU_THRESHOLD)
+        
+        # Save visualizations for up to 5 Hard samples
+        if tier == "Hard" and saved_visualizations < 5:
+            vis_path = os.path.join(vis_dir, f"hard_sample_{saved_visualizations+1}.png")
+            save_annotated_image(image, gt_boxes, pred_boxes, vis_path, f1)
+            saved_visualizations += 1
         
         tier_stats[tier]["p_sum"] += p
         tier_stats[tier]["r_sum"] += r
