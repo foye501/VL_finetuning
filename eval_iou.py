@@ -90,6 +90,12 @@ def evaluate_boxes(pred_boxes, gt_boxes, iou_threshold=0.5):
         
     return precision, recall, f1
 
+def get_difficulty(count):
+    if count <= 5: return "Easy"
+    if count <= 20: return "Medium"
+    if count <= 50: return "Hard"
+    return "Extreme"
+
 # ==========================================
 # 3. Execution
 # ==========================================
@@ -106,10 +112,12 @@ def main():
     dataset = load_dataset(HF_DATASET, split="train")
     dataset = dataset.shuffle(seed=123).select(range(EVAL_SAMPLES))
 
-    total_precision = 0.0
-    total_recall = 0.0
-    total_f1 = 0.0
-    valid_samples = 0
+    tier_stats = {
+        "Easy": {"p_sum": 0, "r_sum": 0, "f1_sum": 0, "count": 0},
+        "Medium": {"p_sum": 0, "r_sum": 0, "f1_sum": 0, "count": 0},
+        "Hard": {"p_sum": 0, "r_sum": 0, "f1_sum": 0, "count": 0},
+        "Extreme": {"p_sum": 0, "r_sum": 0, "f1_sum": 0, "count": 0}
+    }
 
     print(f"\n--- Starting Bounding Box Evaluation ({len(dataset)} images) ---")
     for item in tqdm(dataset):
@@ -119,8 +127,11 @@ def main():
         user_prompt = messages[0]["content"].replace("<image>", "").replace("<|image_pad|>", "").strip()
         gt_boxes = extract_boxes(messages[1]["content"])
         
-        if len(gt_boxes) == 0:
+        target_count = len(gt_boxes)
+        if target_count == 0:
             continue # Skip if no ground truth boxes found
+            
+        tier = get_difficulty(target_count)
             
         chat = [
             {
@@ -147,27 +158,42 @@ def main():
         
         p, r, f1 = evaluate_boxes(pred_boxes, gt_boxes, IOU_THRESHOLD)
         
-        total_precision += p
-        total_recall += r
-        total_f1 += f1
-        valid_samples += 1
+        tier_stats[tier]["p_sum"] += p
+        tier_stats[tier]["r_sum"] += r
+        tier_stats[tier]["f1_sum"] += f1
+        tier_stats[tier]["count"] += 1
 
     print("\n" + "="*50)
     print("--- Bounding Box Localization Results (IoU >= 0.5) ---")
     print("="*50)
-    if valid_samples > 0:
-        avg_p = total_precision / valid_samples
-        avg_r = total_recall / valid_samples
-        avg_f1 = total_f1 / valid_samples
-        print(f"Evaluated Samples: {valid_samples}")
-        print(f"Mean Precision: {avg_p * 100:.2f}% (Are predicted boxes objects?)")
-        print(f"Mean Recall:    {avg_r * 100:.2f}% (Did we find all objects?)")
-        print(f"Mean F1-Score:  {avg_f1 * 100:.2f}%")
+    
+    total_valid = sum(t["count"] for t in tier_stats.values())
+    
+    if total_valid > 0:
+        overall_p = sum(t["p_sum"] for t in tier_stats.values()) / total_valid
+        overall_r = sum(t["r_sum"] for t in tier_stats.values()) / total_valid
+        overall_f1 = sum(t["f1_sum"] for t in tier_stats.values()) / total_valid
+        
+        print(f"Overall Evaluated Samples: {total_valid}")
+        print(f"Overall Mean Precision: {overall_p * 100:.2f}% (Are predicted boxes objects?)")
+        print(f"Overall Mean Recall:    {overall_r * 100:.2f}% (Did we find all objects?)")
+        print(f"Overall Mean F1-Score:  {overall_f1 * 100:.2f}%")
+        
+        print("\nBreakdown by Difficulty Tier:")
+        for tier_name, stats in tier_stats.items():
+            if stats["count"] > 0:
+                tier_p = stats["p_sum"] / stats["count"]
+                tier_r = stats["r_sum"] / stats["count"]
+                tier_f1 = stats["f1_sum"] / stats["count"]
+                print(f"  {tier_name} (n={stats['count']}):")
+                print(f"    Precision: {tier_p*100:.2f}%")
+                print(f"    Recall:    {tier_r*100:.2f}%")
+                print(f"    F1-Score:  {tier_f1*100:.2f}%")
         
         print("\nConclusion:")
-        if avg_f1 > 0.8:
+        if overall_f1 > 0.8:
             print("Verdict: EXCELLENT. The model is deeply grounded and predicting accurate coordinates.")
-        elif avg_f1 > 0.5:
+        elif overall_f1 > 0.5:
             print("Verdict: GOOD. The model learned to locate objects, though with some spatial noise.")
         else:
             print("Verdict: POOR. The model learned the format but is hallucinating box locations.")
