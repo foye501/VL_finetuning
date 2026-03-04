@@ -221,25 +221,28 @@ def generate_image(difficulty_level, num_samples, start_idx=0):
             "has_overlap": has_overlap,
         }
         
-        # 7. Record Annotation for LLaMA-Factory Fine-tuning
-        # Qwen-VL expects boxes in format: <box> [ymin, xmin, ymax, xmax] </box> relative to 1000
+        # 7. Record Annotation for DETR-VLM Fine-tuning
+        # We NO LONGER force the LLM to autoregressively output `<box>` coordinates as text.
+        # Instead, we provide the clean `gt_boxes` directly for the DETR Hungarian Loss,
+        # and limit the LLM's assistant response to purely answering the question.
         w, h = config.IMAGE_SIZE
-        box_sequence = ""
+        gt_boxes_norm = []
         for box in target_boxes:
             xmin, ymin, xmax, ymax = box
-            # Normalize to 0-1000 range and clamp to ensure vocab safety
+            # Normalize to 0-1000 range for consistency
             nx_min = max(0, min(1000, int((xmin / w) * 1000)))
             ny_min = max(0, min(1000, int((ymin / h) * 1000)))
             nx_max = max(0, min(1000, int((xmax / w) * 1000)))
             ny_max = max(0, min(1000, int((ymax / h) * 1000)))
-            box_sequence += f"<box> [{ny_min}, {nx_min}, {ny_max}, {nx_max}] </box> "
+            gt_boxes_norm.append([ny_min, nx_min, ny_max, nx_max])
             
-        assistant_response = f"{box_sequence.strip()}\nTotal count: {actual_targets_placed}".strip()
+        # The LLM now only has to output a few tokens!
+        assistant_response = f"Total count: {actual_targets_placed}"
         
         llama_factory_item = {
             "messages": [
                 {
-                    "content": "<image>" + q + " Please annotate the location of each object, and then state the total count.",
+                    "content": "<image>" + q + " Please count the objects.",
                     "role": "user"
                 },
                 {
@@ -249,7 +252,8 @@ def generate_image(difficulty_level, num_samples, start_idx=0):
             ],
             "images": [
                 f"{config.IMAGE_DIR}/{img_filename}"
-            ]
+            ],
+            "gt_boxes": gt_boxes_norm  # Passed cleanly to the PyTorch Collator
         }
 
         annotations.append({
